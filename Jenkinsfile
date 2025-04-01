@@ -1,49 +1,63 @@
 pipeline {
+    // Run on any available agent
     agent any
+
+    // Environment variables
+    environment {
+        DOCKERHUB_USERNAME = 'bhadaneunnati1110'  // Your Docker Hub username
+        APP_NAME = 'python-app'                   // Name of your app/image
+    }
+
     stages {
+        // Stage 1: Checkout code from GitHub
         stage('Checkout') {
             steps {
-                git url: 'https://github.com/UnnatiBhadane/PythonA.git', branch: 'main'
+                git branch: 'main', 
+                    credentialsId: 'github-credentials', 
+                    url: 'https://github.com/UnnatiBhadane/PythonA.git'
+                sh 'ls -la'  // Debug: List files
             }
         }
+
+        // Stage 2: Build Docker Image
         stage('Build Docker Image') {
             steps {
                 script {
-                    docker.build("python-app:${env.BUILD_ID}")
+                    docker.build("${DOCKERHUB_USERNAME}/${APP_NAME}:${env.BUILD_ID}")
+                    sh 'docker images'  // Debug: List images
                 }
             }
         }
-        stage('Test') {
-            steps {
-                script {
-                    docker.image("python-app:${env.BUILD_ID}").inside {
-                        sh 'echo "Tests passed (placeholder)"'
-                    }
-                }
-            }
-        }
+
+        // Stage 3: Push to Docker Hub
         stage('Push to Registry') {
             steps {
                 script {
                     docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-credentials') {
-                        docker.image("python-app:${env.BUILD_ID}").push()
-                        docker.image("python-app:${env.BUILD_ID}").push('latest')
+                        def appImage = docker.image("${DOCKERHUB_USERNAME}/${APP_NAME}:${env.BUILD_ID}")
+                        appImage.push()          // Push with build ID (e.g., bhadaneunnati1110/python-app:1)
+                        appImage.push('latest')  // Push as latest
                     }
+                    sh 'docker images'
                 }
             }
         }
-        stage('Deploy') {
+
+        // Stage 4: Clean Up
+        stage('Clean Up') {
             steps {
-                script {
-                    sh 'docker stop python-app || true && docker rm python-app || true'
-                    sh 'docker run -d --name python-app -p 5000:5000 python-app:latest'
-                }
+                sh "docker rmi ${DOCKERHUB_USERNAME}/${APP_NAME}:${env.BUILD_ID}"
+                sh "docker rmi ${DOCKERHUB_USERNAME}/${APP_NAME}:latest"
             }
         }
     }
+
     post {
-        always {
-            sh 'docker system prune -f'
+        success {
+            echo "Python pipeline completed successfully! Image pushed to Docker Hub."
+        }
+        failure {
+            echo "Python pipeline failed. Check the console output for details."
         }
     }
 }
